@@ -96,3 +96,36 @@ def summarise_and_tag(
             time.sleep(2 ** attempt * 2)
 
     raise RuntimeError(f"Claude API failed after 3 attempts: {last_err}")
+
+
+def name_cluster(entries: list[dict]) -> dict:
+    """
+    Ask Claude to name a semantic cluster given a list of entry titles and tags.
+    Returns {"name": "...", "description": "..."}.
+    """
+    lines = "\n".join(
+        f'- "{e.get("title", "(no title)")}"  [tags: {", ".join(e.get("tags", []))}]'
+        for e in entries[:12]
+    )
+    prompt = (
+        "Given these entries from a personal knowledge base that have been "
+        "clustered together by semantic similarity:\n\n"
+        f"{lines}\n\n"
+        'Suggest a concise group name (2–5 words) and a one-sentence description.\n'
+        'Return JSON only: {"name": "...", "description": "..."}'
+    )
+    client = _client_instance()
+    for attempt in range(3):
+        try:
+            response = client.messages.create(
+                model=CLAUDE_MODEL,
+                max_tokens=150,
+                system=[{"type": "text", "text": "Return only valid JSON.",
+                          "cache_control": {"type": "ephemeral"}}],
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw = response.content[0].text.strip().lstrip("```json").rstrip("```").strip()
+            return json.loads(raw)
+        except (json.JSONDecodeError, Exception):
+            time.sleep(2 ** attempt)
+    return {"name": "Unnamed Cluster", "description": ""}

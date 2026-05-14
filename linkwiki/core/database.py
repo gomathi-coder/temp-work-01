@@ -197,6 +197,71 @@ def list_entries(
     return [_deserialise(r) for r in rows]
 
 
+def get_all_entries_for_linking() -> list[dict]:
+    """Return id, tags, entities for all processable entries."""
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT id, tags, entities FROM entries WHERE status IN ('done', 'partial')"
+        ).fetchall()
+    return [_deserialise(r) for r in rows]
+
+
+def upsert_link(from_id: str, to_id: str, link_type: str,
+                strength: float, metadata: dict | None = None) -> None:
+    a, b = (from_id, to_id) if from_id < to_id else (to_id, from_id)
+    with _conn() as conn:
+        conn.execute(
+            """INSERT INTO links (id, from_id, to_id, link_type, strength, metadata, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT (from_id, to_id, link_type) DO UPDATE SET
+                   strength = excluded.strength,
+                   metadata = excluded.metadata""",
+            (_short_id(), a, b, link_type, strength,
+             json.dumps(metadata or {}), _now()),
+        )
+
+
+def get_related(entry_id: str, link_type: str | None = None,
+                limit: int = 10) -> list[dict]:
+    type_clause = "AND l.link_type = ?" if link_type else ""
+    base_params = [entry_id, entry_id]
+    if link_type:
+        base_params.append(link_type)
+
+    with _conn() as conn:
+        rows = conn.execute(
+            f"""SELECT e.*, l.link_type as _link_type, l.strength as _strength
+                FROM links l
+                JOIN entries e ON e.id = CASE
+                    WHEN l.from_id = ? THEN l.to_id ELSE l.from_id END
+                WHERE (l.from_id = ? OR l.to_id = ?) {type_clause}
+                  AND e.id != ?
+                ORDER BY l.strength DESC
+                LIMIT ?""",
+            [entry_id] + base_params + [entry_id, limit],
+        ).fetchall()
+
+    result = []
+    for r in rows:
+        d = _deserialise(r)
+        d["link_type"] = d.pop("_link_type", None)
+        d["strength"] = d.pop("_strength", None)
+        result.append(d)
+    return result
+
+
+def delete_links_for(entry_id: str, link_type: str | None = None) -> None:
+    clause = "AND link_type = ?" if link_type else ""
+    params = [entry_id, entry_id]
+    if link_type:
+        params.append(link_type)
+    with _conn() as conn:
+        conn.execute(
+            f"DELETE FROM links WHERE (from_id = ? OR to_id = ?) {clause}",
+            params,
+        )
+
+
 def search_entries(query_text: str, limit: int = 10) -> list[dict]:
     """Simple keyword search over title, summary, and tags (Phase 1)."""
     like = f"%{query_text}%"
