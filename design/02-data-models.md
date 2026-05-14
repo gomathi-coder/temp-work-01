@@ -17,7 +17,9 @@ CREATE TABLE entries (
     tags          TEXT NOT NULL DEFAULT '[]',     -- JSON array of strings
     entities      TEXT NOT NULL DEFAULT '[]',     -- JSON array of Entity objects (see below)
     discovered_links TEXT NOT NULL DEFAULT '[]',  -- JSON array of URLs found inside content
-    status        TEXT NOT NULL DEFAULT 'pending',-- pending | processing | done | error
+    source_type   TEXT NOT NULL DEFAULT 'cli',    -- file | cli | api | ui | discovered
+    source_ref    TEXT,                           -- filename, API key label, parent entry ID, etc.
+    status        TEXT NOT NULL DEFAULT 'pending',-- pending | processing | done | error | partial
     error_msg     TEXT,
     created_at    TEXT NOT NULL,             -- ISO-8601
     processed_at  TEXT
@@ -62,13 +64,28 @@ CREATE TABLE links (
 );
 
 -- ─────────────────────────────────────────
+-- Input file registry
+-- Tracks which batch files have been processed
+-- ─────────────────────────────────────────
+CREATE TABLE input_files (
+    id            TEXT PRIMARY KEY,          -- UUID v4
+    file_path     TEXT NOT NULL UNIQUE,      -- absolute or relative path to links.txt
+    last_read_at  TEXT,                      -- ISO-8601, NULL = never processed
+    total_lines   INTEGER DEFAULT 0,
+    processed     INTEGER DEFAULT 0,         -- lines successfully ingested
+    skipped       INTEGER DEFAULT 0,         -- duplicates / blank lines
+    errored       INTEGER DEFAULT 0
+);
+
+-- ─────────────────────────────────────────
 -- Index hints
 -- ─────────────────────────────────────────
-CREATE INDEX idx_entries_url_type ON entries(url_type);
-CREATE INDEX idx_entries_status   ON entries(status);
-CREATE INDEX idx_links_from       ON links(from_id);
-CREATE INDEX idx_links_to         ON links(to_id);
-CREATE INDEX idx_links_type       ON links(link_type);
+CREATE INDEX idx_entries_url_type    ON entries(url_type);
+CREATE INDEX idx_entries_status      ON entries(status);
+CREATE INDEX idx_entries_source_type ON entries(source_type);
+CREATE INDEX idx_links_from          ON links(from_id);
+CREATE INDEX idx_links_to            ON links(to_id);
+CREATE INDEX idx_links_type          ON links(link_type);
 ```
 
 ---
@@ -136,9 +153,20 @@ Entry
   tags: list[str]
   entities: list[Entity]
   discovered_links: list[DiscoveredLink]
-  status: EntryStatus        # enum
+  source_type: SourceType    # enum: file, cli, api, ui, discovered
+  source_ref: str | None     # filename | API key label | parent entry ID
+  status: EntryStatus        # enum: pending, processing, done, error, partial
   created_at: datetime
   processed_at: datetime | None
+
+InputFile
+  id: str
+  file_path: str
+  last_read_at: datetime | None
+  total_lines: int
+  processed: int
+  skipped: int
+  errored: int
 
 Entity
   name: str
@@ -172,10 +200,12 @@ GraphLink
 ## Entity Relationship Diagram
 
 ```
-entries ──< entry_groups >── groups
-   │                              │
-   └──────────< links >───────────┘
-   (from_id)         (to_id)
+input_files ──< entries (source_ref = file_path, source_type = 'file')
+                   │
+                   ├──< entry_groups >── groups
+                   │                       │
+                   └──────< links >─────────┘
+                   (from_id)    (to_id)
 
 groups ──< groups (self-ref, parent_id)
 ```
@@ -184,3 +214,14 @@ One entry → many groups.
 One group → many entries.
 One entry → many outgoing/incoming links.
 Groups can be nested one level deep (parent_id).
+One input file → many entries (linked via `source_ref`).
+
+## Source Tracking Reference
+
+| source_type | source_ref value | How entry was created |
+|-------------|------------------|-----------------------|
+| `file` | `links.txt` (filename) | Batch file processed via `linkwiki process` |
+| `cli` | `NULL` | `linkwiki add <url>` directly in terminal |
+| `api` | API key label or client name | POST `/entries` via REST API |
+| `ui` | `NULL` | Added through the web or mobile UI |
+| `discovered` | Parent entry UUID | URL found inside another entry's content |

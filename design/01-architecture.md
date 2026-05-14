@@ -12,26 +12,28 @@ other, and lets you browse the result as a wiki.
 
 | Phase | Scope |
 |-------|-------|
-| 1 | CLI tool — add, list, show, search |
-| 2 | Grouping, linking, wiki graph view |
-| 3 | Web UI (FastAPI backend + React/Next.js frontend) |
-| 4 | Mobile (React Native or PWA) |
+| 1 | CLI tool — `process` (file input), `add`, `list`, `show`, `search` |
+| 2 | Grouping, linking, wiki graph view, `sync` |
+| 3 | REST API (FastAPI) — enables web UI and mobile |
+| 4 | Web UI (React/Next.js) |
+| 5 | Mobile (React Native or PWA) |
 
 The core library (extraction, AI, storage) is designed once and wrapped by the
-CLI in Phase 1, then reused by the web server in Phase 3.
+CLI in Phase 1, then exposed as HTTP endpoints in Phase 3, then consumed by
+the UI in Phase 4.
 
 ---
 
 ## High-Level Component Map
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         User Interfaces                          │
-│  CLI (Phase 1)          Web UI (Phase 3)     Mobile (Phase 4)   │
-└────────────┬──────────────────┬──────────────────────┬──────────┘
-             │                  │                      │
-             └──────────────────▼──────────────────────┘
-                          Core Library
+  Link inputs
+  ┌─────────────────────────────────────────────────────────────┐
+  │  links.txt (file)    CLI add     REST API     Web / Mobile  │
+  └────────┬─────────────────┬──────────┬───────────────┬───────┘
+           │                 │          │               │
+           └─────────────────▼──────────▼───────────────┘
+                        Core Library
           ┌───────────────────────────────────────────┐
           │                                           │
           ▼                                           ▼

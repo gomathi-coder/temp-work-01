@@ -10,6 +10,39 @@ python main.py <command> [options]
 
 ---
 
+## Input File Format
+
+Before using the CLI, you can collect links in a plain text file and batch-process them.
+
+**File format (`links.txt`):**
+```
+# Lines starting with # are comments and are ignored
+# Blank lines are ignored
+
+# Bare URL — minimal, just the link
+https://www.youtube.com/watch?v=kCc8FmEb1nY
+
+# URL with inline tags
+https://arxiv.org/abs/2307.09288  | tags: llm, paper, transformer
+
+# URL with tags and group assignment
+https://github.com/karpathy/nanoGPT  | tags: pytorch, education | group: LLM Education
+
+# URL with a human label (used as title override if extraction fails)
+https://medium.com/some-article  | label: My saved article
+```
+
+Rules:
+- One URL per line
+- `|` separates the URL from optional metadata fields
+- `tags:` comma-separated list; merged with LLM-generated tags
+- `group:` exact group name; created if it doesn't exist
+- `label:` used as title if the page title cannot be extracted
+- Duplicate URLs are silently skipped (already in DB)
+- After processing, the file is **not modified** — the DB tracks what has been seen
+
+---
+
 ## Commands
 
 ### `add` — Ingest a URL
@@ -41,6 +74,49 @@ Examples:
             and training loops …
   Found   : 3 related entries  |  6 links discovered in description
 ```
+
+---
+
+### `process` — Batch-ingest a links file
+
+```
+linkwiki process [file] [options]
+
+Arguments:
+  file               Path to links file  [default: links.txt in current dir]
+
+Options:
+  --dry-run          Show what would be added; don't save anything
+  --skip-existing    Silently skip URLs already in the DB  [default: true]
+  --fail-fast        Stop on first error instead of continuing
+  --concurrency INT  Number of URLs to process in parallel  [default: 3]
+
+Examples:
+  linkwiki process
+  linkwiki process ~/downloads/research-links.txt
+  linkwiki process links.txt --dry-run
+  linkwiki process links.txt --concurrency 5
+```
+
+**Output:**
+```
+Processing links.txt  (23 URLs)
+
+  ✔ abc123  Let's build GPT (Karpathy)              [youtube]
+  ✔ def456  Attention Is All You Need               [web]
+  ⚠ –       https://medium.com/…                   already in DB, skipped
+  ✔ ghi789  karpathy/nanoGPT                        [github]
+  ✘ –       https://broken-url.example              connection timeout
+
+─────────────────────────────────────────────────────
+  Done   20 / 23   |  Skipped 2   |  Errors 1
+  Time   48s       |  Cost   ~$0.08
+```
+
+**File tracking:**
+After running, the DB records the filename, timestamp, and line counts in the
+`input_files` table. Re-running the same file only processes lines whose URLs
+are not already in the DB.
 
 ---
 
