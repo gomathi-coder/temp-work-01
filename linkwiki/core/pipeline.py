@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from linkwiki.core import database as db
 from linkwiki.core import ai
 from linkwiki import extractors
+from linkwiki.core import vectors, linker
 
 
 def _now() -> str:
@@ -91,6 +92,14 @@ def ingest(
         status=result.status,
         processed_at=_now(),
     )
+
+    # ── Embed + auto-link ──────────────────────────────────────────────────
+    try:
+        vectors.embed_entry(entry_id, result.title, ai_result.get("summary"),
+                            result.url_type, all_tags)
+        linker.link_entry(entry_id)
+    except Exception:
+        pass  # vector/link failures never block the ingest
 
     # ── Group assignment ───────────────────────────────────────────────────
     if group_name:
