@@ -13,7 +13,7 @@ from rich.text import Text
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 
 from linkwiki.core import database as db
-from linkwiki.core import pipeline, file_parser
+from linkwiki.core import pipeline, file_parser, vectors, linker
 
 console = Console()
 err = Console(stderr=True, style="bold red")
@@ -415,3 +415,196 @@ def group_remove(entry_id: str, group_name: str) -> None:
         sys.exit(1)
     db.remove_from_group(entry_id, g["id"])
     console.print(f"[yellow]–[/] [cyan]{entry_id}[/] removed from [magenta]{group_name}[/]")
+
+
+@group_cmd.command(name="show")
+@click.argument("group_name")
+def group_show(group_name: str) -> None:
+    """Show all entries in a group."""
+    _require_db()
+    g = db.get_group_by_name(group_name)
+    if not g:
+        err.print(f"Group not found: {group_name}")
+        sys.exit(1)
+    entries = db.list_entries(group=group_name, limit=100)
+    console.print(f"\n[magenta bold]{group_name}[/]  [dim]{g['group_type']} · {g['entry_count']} entries[/]\n")
+    for e in entries:
+        _print_entry_row(e)
+    console.print()
+
+
+@group_cmd.command(name="delete")
+@click.argument("group_name")
+@click.confirmation_option(prompt="Delete this group?")
+def group_delete(group_name: str) -> None:
+    """Delete a group (entries are not deleted)."""
+    _require_db()
+    if db.delete_group(group_name):
+        console.print(f"[yellow]–[/] Group '[magenta]{group_name}[/]' deleted")
+    else:
+        err.print(f"Group not found: {group_name}")
+
+
+# ── related ────────────────────────────────────────────────────────────────
+
+@cli.command()
+@click.argument("id_or_url")
+@click.option("--type", "link_type", default=None,
+              help="Filter by edge type (semantic|shared_tag|shared_entity|discovered|manual).")
+@click.option("--limit", default=10, show_default=True)
+def related(id_or_url: str, link_type: str | None, limit: int) -> None:
+    """Show entries linked to a given entry."""
+    _require_db()
+    entry = db.get_entry(id_or_url)
+    if not entry:
+        err.print(f"Entry not found: {id_or_url}")
+        sys.exit(1)
+
+    related_entries = db.get_related(entry["id"], link_type=link_type, limit=limit)
+    if not related_entries:
+        console.print("[dim]No related entries found.[/]")
+        return
+
+    console.print(f"\n[bold]Related to[/] [cyan]{entry['id']}[/]  {entry.get('title') or ''}\n")
+    for r in related_entries:
+        strength = f"[dim]{r['strength']:.2f}[/]" if r.get("strength") else ""
+        ltype = f"[dim]{r.get('link_type', '')}[/]"
+        console.print(f"  {strength}  {ltype:20}  [cyan]{r['id']}[/]  {r.get('title') or r['url'][:55]}")
+    console.print()
+
+
+# ── add-discovered ─────────────────────────────────────────────────────────
+
+@cli.command("add-discovered")
+@click.argument("id_or_url")
+@click.option("--all", "ingest_all", is_flag=True, help="Ingest all without prompting.")
+@click.option("--filter", "url_filter", default=None, help="Only ingest URLs containing this substring.")
+def add_discovered(id_or_url: str, ingest_all: bool, url_filter: str | None) -> None:
+    """Ingest links discovered inside an entry's content."""
+    _require_db()
+    entry = db.get_entry(id_or_url)
+    if not entry:
+        err.print(f"Entry not found: {id_or_url}")
+        sys.exit(1)
+
+    links = entry.get("discovered_links", [])
+    if url_filter:
+        links = [l for l in links if url_filter in l["url"]]
+    if not links:
+        console.print("[dim]No discovered links found.[/]")
+        return
+
+    console.print(f"\n[bold]Discovered links in[/] [cyan]{entry['id']}[/]\n")
+    for i, lnk in enumerate(links, 1):
+        label = f"  {lnk.get('label')}" if lnk.get("label") else ""
+        console.print(f"  [{i:2}] {lnk['url'][:70]}{label}")
+
+    if not ingest_all:
+        choice = click.prompt(
+            "\nEnter numbers to ingest (comma-separated), 'all', or 'none'",
+            default="none",
+        )
+        if choice.lower() == "none":
+            return
+        if choice.lower() == "all":
+            to_ingest = links
+        else:
+            indices = []
+            for part in choice.split(","):
+                part = part.strip()
+                if part.isdigit() and 1 <= int(part) <= len(links):
+                    indices.append(int(part) - 1)
+            to_ingest = [links[i] for i in indices]
+    else:
+        to_ingest = links
+
+    console.print()
+    for lnk in to_ingest:
+        url = lnk["url"]
+        with console.status(f"[cyan]{url[:60]}…[/]"):
+            result = pipeline.ingest(url, source_type="discovered", source_ref=entry["id"])
+        status = result["status"]
+        icon = {"done": "[green]✔[/]", "partial": "[yellow]⚠[/]",
+                "duplicate": "[dim]–[/]", "error": "[red]✘[/]"}.get(status, "·")
+        title = (result.get("entry") or {}).get("title") or url[:55]
+        console.print(f"  {icon} {title[:60]}")
+    console.print()
+
+
+# ── reindex ────────────────────────────────────────────────────────────────
+
+@cli.command()
+def reindex() -> None:
+    """Rebuild the ChromaDB vector index from SQLite."""
+    _require_db()
+    entries = db.list_entries(status="done", limit=10_000)
+    entries += db.list_entries(status="partial", limit=10_000)
+
+    console.print(f"Re-embedding [bold]{len(entries)}[/] entries…\n")
+    with Progress(SpinnerColumn(), TextColumn("{task.description}"),
+                  BarColumn(), TaskProgressColumn(), console=console) as progress:
+        task = progress.add_task("Embedding…", total=len(entries))
+        for e in entries:
+            vectors.embed_entry(e["id"], e.get("title"), e.get("summary"),
+                                e["url_type"], e["tags"])
+            progress.advance(task)
+
+    console.print(f"[green]✔[/] Index rebuilt — {vectors.count()} vectors stored\n")
+
+
+# ── sync ───────────────────────────────────────────────────────────────────
+
+@cli.command()
+@click.option("--tags/--no-tags", default=True, show_default=True)
+@click.option("--entities/--no-entities", default=True, show_default=True)
+@click.option("--semantic/--no-semantic", default=True, show_default=True)
+def sync(tags: bool, entities: bool, semantic: bool) -> None:
+    """Re-run auto-linking and auto-grouping across all entries."""
+    _require_db()
+
+    with console.status("[cyan]Syncing knowledge graph…[/]"):
+        results = linker.sync_all(run_tags=tags, run_entities=entities, run_semantic=semantic)
+
+    console.print(Panel(
+        f"[bold]Tag links[/]       {results.get('tag_links', 0):>6} edges\n"
+        f"[bold]Tag groups[/]      {results.get('tag_groups', 0):>6} groups updated\n"
+        f"[bold]Entity links[/]    {results.get('entity_links', 0):>6} edges\n"
+        f"[bold]Entity groups[/]   {results.get('entity_groups', 0):>6} groups updated\n"
+        f"[bold]Semantic links[/]  {results.get('semantic_links', 0):>6} edges\n"
+        f"[bold]Semantic groups[/] {results.get('semantic_groups', 0):>6} clusters named\n"
+        f"[bold]Discovered[/]      {results.get('discovered_links', 0):>6} cross-links",
+        title="[bold]Sync complete[/]",
+        border_style="green",
+    ))
+
+
+# ── export ─────────────────────────────────────────────────────────────────
+
+@cli.command()
+@click.option("--format", "fmt", default="json",
+              type=click.Choice(["json", "csv", "obsidian"]), show_default=True)
+@click.option("--output", default=None,
+              help="Output file or directory (default: linkwiki-export.json / linkwiki-obsidian/)")
+@click.option("--group", default=None, help="Export only entries in this group.")
+def export(fmt: str, output: str | None, group: str | None) -> None:
+    """Export the knowledge base (json | csv | obsidian)."""
+    _require_db()
+    from linkwiki.core.export import export_json, export_csv, export_obsidian
+
+    entries = db.list_entries(group=group, limit=100_000)
+    if not entries:
+        console.print("[dim]No entries to export.[/]")
+        return
+
+    if fmt == "json":
+        path = output or "linkwiki-export.json"
+        export_json(entries, path)
+        console.print(f"[green]✔[/] JSON export → [bold]{path}[/]  ({len(entries)} entries)")
+    elif fmt == "csv":
+        path = output or "linkwiki-export.csv"
+        export_csv(entries, path)
+        console.print(f"[green]✔[/] CSV export  → [bold]{path}[/]  ({len(entries)} entries)")
+    elif fmt == "obsidian":
+        path = output or "linkwiki-obsidian"
+        export_obsidian(entries, path)
+        console.print(f"[green]✔[/] Obsidian    → [bold]{path}/[/]  ({len(entries)} files)")
