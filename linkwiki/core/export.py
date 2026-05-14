@@ -1,4 +1,4 @@
-"""Export adapters — JSON, CSV, Obsidian Markdown."""
+"""Export adapters — JSON, CSV, Obsidian Markdown, static HTML."""
 
 from __future__ import annotations
 import csv
@@ -6,6 +6,11 @@ import json
 import re
 from pathlib import Path
 from linkwiki.core import database as db
+
+
+def export_html(entries: list[dict], output_dir: str) -> int:
+    from linkwiki.core.html_export import export_html as _export_html
+    return _export_html(entries, output_dir)
 
 
 def export_json(entries: list[dict], output_path: str) -> None:

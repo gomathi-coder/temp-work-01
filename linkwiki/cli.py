@@ -582,14 +582,14 @@ def sync(tags: bool, entities: bool, semantic: bool) -> None:
 
 @cli.command()
 @click.option("--format", "fmt", default="json",
-              type=click.Choice(["json", "csv", "obsidian"]), show_default=True)
+              type=click.Choice(["json", "csv", "obsidian", "html"]), show_default=True)
 @click.option("--output", default=None,
-              help="Output file or directory (default: linkwiki-export.json / linkwiki-obsidian/)")
+              help="Output file or directory.")
 @click.option("--group", default=None, help="Export only entries in this group.")
 def export(fmt: str, output: str | None, group: str | None) -> None:
-    """Export the knowledge base (json | csv | obsidian)."""
+    """Export the knowledge base (json | csv | obsidian | html)."""
     _require_db()
-    from linkwiki.core.export import export_json, export_csv, export_obsidian
+    from linkwiki.core.export import export_json, export_csv, export_obsidian, export_html
 
     entries = db.list_entries(group=group, limit=100_000)
     if not entries:
@@ -608,3 +608,11 @@ def export(fmt: str, output: str | None, group: str | None) -> None:
         path = output or "linkwiki-obsidian"
         export_obsidian(entries, path)
         console.print(f"[green]✔[/] Obsidian    → [bold]{path}/[/]  ({len(entries)} files)")
+    elif fmt == "html":
+        path = output or "linkwiki-html"
+        total_files = export_html(entries, path)
+        console.print(
+            f"[green]✔[/] HTML export → [bold]{path}/[/]\n"
+            f"   [dim]{len(entries)} entry pages · groups · index.html[/]\n"
+            f"   Open [bold]{path}/index.html[/] in any browser"
+        )
