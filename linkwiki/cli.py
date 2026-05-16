@@ -19,6 +19,8 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskPr
 
 from linkwiki.core import database as db
 from linkwiki.core import pipeline, file_parser, vectors, linker
+from linkwiki.core.logging_config import setup_logging
+from linkwiki.core.config import LOG_DIR, LOG_LEVEL
 
 console = Console()
 err = Console(stderr=True, style="bold red")
@@ -96,6 +98,7 @@ def _print_entry_detail(entry: dict) -> None:
 @click.version_option("0.1.0", prog_name="linkwiki")
 def cli() -> None:
     """LinkWiki — personal knowledge graph for URLs."""
+    setup_logging(LOG_DIR, LOG_LEVEL)
 
 
 # ── add ────────────────────────────────────────────────────────────────────

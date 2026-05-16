@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 import json
+import logging
 import time
 import anthropic
 from linkwiki.core.config import ANTHROPIC_API_KEY, CLAUDE_MODEL, MAX_CONTENT_CHARS
+
+log = logging.getLogger(__name__)
 
 _client: anthropic.Anthropic | None = None
 
@@ -50,6 +53,13 @@ def summarise_and_tag(
     Returns a dict with keys: summary, tags, entities, suggested_groups.
     Retries up to 3 times with exponential backoff on transient errors.
     """
+    content_chars = len(content)
+    log.info(
+        "summarisation started",
+        extra={"url_type": url_type, "title": title, "content_chars": content_chars,
+               "model": CLAUDE_MODEL},
+    )
+
     user_text = f"URL type: {url_type}\n"
     if title:
         user_text += f"Title: {title}\n"
@@ -59,8 +69,14 @@ def summarise_and_tag(
 
     client = _client_instance()
     last_err: Exception | None = None
+    t0 = time.monotonic()
 
     for attempt in range(3):
+        attempt_num = attempt + 1
+        log.debug(
+            "sending request to Claude",
+            extra={"url_type": url_type, "attempt": attempt_num, "model": CLAUDE_MODEL},
+        )
         try:
             response = client.messages.create(
                 model=CLAUDE_MODEL,
@@ -74,27 +90,62 @@ def summarise_and_tag(
                 ],
                 messages=[{"role": "user", "content": user_text}],
             )
+            duration_ms = int((time.monotonic() - t0) * 1000)
             raw = response.content[0].text.strip()
             # Strip accidental markdown fences
             if raw.startswith("```"):
                 raw = raw.split("```")[1]
                 if raw.startswith("json"):
                     raw = raw[4:]
-            return json.loads(raw)
+            result = json.loads(raw)
+            log.info(
+                "Claude API call succeeded",
+                extra={
+                    "url_type": url_type,
+                    "attempt": attempt_num,
+                    "duration_ms": duration_ms,
+                    "input_tokens": response.usage.input_tokens,
+                    "output_tokens": response.usage.output_tokens,
+                    "tags_returned": len(result.get("tags", [])),
+                    "entities_returned": len(result.get("entities", [])),
+                },
+            )
+            return result
 
         except json.JSONDecodeError as e:
             last_err = e
-            # Retry once with an explicit reminder
+            log.warning(
+                "JSON decode error, retrying with reminder",
+                extra={"url_type": url_type, "attempt": attempt_num, "error": str(e)},
+            )
             user_text += "\n\nIMPORTANT: Return only raw JSON, no markdown."
 
         except anthropic.RateLimitError as e:
             last_err = e
-            time.sleep(2 ** attempt * 5)
+            wait_secs = 2 ** attempt * 5
+            log.warning(
+                "rate limit hit, backing off",
+                extra={"url_type": url_type, "attempt": attempt_num,
+                       "wait_secs": wait_secs, "error": str(e)},
+            )
+            time.sleep(wait_secs)
 
         except (anthropic.APIConnectionError, anthropic.InternalServerError) as e:
             last_err = e
-            time.sleep(2 ** attempt * 2)
+            wait_secs = 2 ** attempt * 2
+            log.warning(
+                "API transient error, retrying",
+                extra={"url_type": url_type, "attempt": attempt_num,
+                       "wait_secs": wait_secs, "error": str(e)},
+            )
+            time.sleep(wait_secs)
 
+    duration_ms = int((time.monotonic() - t0) * 1000)
+    log.error(
+        "Claude API failed after all attempts",
+        extra={"url_type": url_type, "title": title,
+               "duration_ms": duration_ms, "last_error": str(last_err)},
+    )
     raise RuntimeError(f"Claude API failed after 3 attempts: {last_err}")
 
 
@@ -103,6 +154,10 @@ def name_cluster(entries: list[dict]) -> dict:
     Ask Claude to name a semantic cluster given a list of entry titles and tags.
     Returns {"name": "...", "description": "..."}.
     """
+    entry_count = len(entries)
+    log.info("cluster naming started", extra={"entry_count": entry_count})
+    t0 = time.monotonic()
+
     lines = "\n".join(
         f'- "{e.get("title", "(no title)")}"  [tags: {", ".join(e.get("tags", []))}]'
         for e in entries[:12]
@@ -116,6 +171,7 @@ def name_cluster(entries: list[dict]) -> dict:
     )
     client = _client_instance()
     for attempt in range(3):
+        attempt_num = attempt + 1
         try:
             response = client.messages.create(
                 model=CLAUDE_MODEL,
@@ -125,7 +181,20 @@ def name_cluster(entries: list[dict]) -> dict:
                 messages=[{"role": "user", "content": prompt}],
             )
             raw = response.content[0].text.strip().lstrip("```json").rstrip("```").strip()
-            return json.loads(raw)
-        except (json.JSONDecodeError, Exception):
+            result = json.loads(raw)
+            duration_ms = int((time.monotonic() - t0) * 1000)
+            log.info(
+                "cluster naming complete",
+                extra={"entry_count": entry_count, "cluster_name": result.get("name"),
+                       "attempt": attempt_num, "duration_ms": duration_ms},
+            )
+            return result
+        except (json.JSONDecodeError, Exception) as e:
+            log.warning(
+                "cluster naming attempt failed",
+                extra={"attempt": attempt_num, "error": str(e)},
+            )
             time.sleep(2 ** attempt)
+
+    log.warning("cluster naming exhausted retries, returning fallback", extra={"entry_count": entry_count})
     return {"name": "Unnamed Cluster", "description": ""}

@@ -1,0 +1,95 @@
+# ── Environment & secrets ─────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+
+# ── Python ────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+wheels/
+sdist/
+.eggs/
+MANIFEST
+
+# ── Virtual environments ──────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+.virtualenv/
+
+# ── Package managers ──────────────────────────────────────────────────────
+pip-wheel-metadata/
+pip-log.txt
+.pip/
+
+# ── Testing & coverage ────────────────────────────────────────────────────
+.pytest_cache/
+.tox/
+.nox/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# ── Type checking ─────────────────────────────────────────────────────────
+.mypy_cache/
+.pytype/
+.pyre/
+.ruff_cache/
+
+# ── LinkWiki runtime data ─────────────────────────────────────────────────
+# Default data directory (SQLite DB + ChromaDB vectors)
+~/.linkwiki/
+.linkwiki/
+
+# Log files
+logs/*.jsonl
+logs/*.jsonl.*
+logs/*.log
+
+# HTML export output
+linkwiki-html/
+
+# ── IDE & editor ──────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.iml
+*.iws
+*.ipr
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+.vs/
+
+# ── OS ────────────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ── Jupyter ───────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── Archives & scratch ────────────────────────────────────────────────────
+# Keep the folder, ignore everything inside it
+archive/*
+!archive/.gitkeep
+*.bak
+*.tmp
+*.swp
+*~

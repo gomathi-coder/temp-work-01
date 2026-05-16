@@ -1,11 +1,15 @@
 """Generic web extractor — trafilatura for article text, BeautifulSoup for links."""
 
 from __future__ import annotations
+import logging
+import time
 import requests
 import trafilatura  # type: ignore
 from bs4 import BeautifulSoup
 from linkwiki.extractors.result import ExtractionResult
 from linkwiki.core.config import MAX_CONTENT_CHARS
+
+log = logging.getLogger(__name__)
 
 _HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; LinkWiki/1.0; +https://github.com/linkwiki)"}
 
@@ -46,24 +50,63 @@ def _discover_links(soup: BeautifulSoup) -> list[dict]:
 
 
 def extract(url: str) -> ExtractionResult:
+    log.info("extraction started", extra={"url": url, "extractor": "web"})
+    t0 = time.monotonic()
+
     try:
         resp = requests.get(url, headers=_HEADERS, timeout=15)
+        duration_ms = int((time.monotonic() - t0) * 1000)
         resp.raise_for_status()
         html = resp.text
+        log.info(
+            "HTTP response received",
+            extra={
+                "url": url,
+                "status_code": resp.status_code,
+                "duration_ms": duration_ms,
+                "content_bytes": len(resp.content),
+            },
+        )
+    except requests.HTTPError as e:
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        log.error(
+            "HTTP error response",
+            extra={"url": url, "status_code": e.response.status_code if e.response else None,
+                   "error": str(e), "duration_ms": duration_ms},
+        )
+        return ExtractionResult(url=url, url_type="web", status="error", error_msg=str(e))
     except requests.RequestException as e:
-        return ExtractionResult(url=url, url_type="web",
-                                status="error", error_msg=str(e))
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        log.error(
+            "HTTP request failed",
+            extra={"url": url, "error": str(e), "duration_ms": duration_ms},
+        )
+        return ExtractionResult(url=url, url_type="web", status="error", error_msg=str(e))
 
     soup = BeautifulSoup(html, "html.parser")
     title = _page_title(soup)
     author = _page_author(soup)
     discovered = _discover_links(soup)
 
+    log.debug(
+        "metadata extracted",
+        extra={"url": url, "title": title, "author": author, "discovered_count": len(discovered)},
+    )
+
     content = trafilatura.extract(html, include_links=False, include_comments=False)
 
     if not content:
-        # Paywall or JS-rendered — store metadata only
+        log.warning(
+            "content extraction failed, possible paywall or JS-rendered page",
+            extra={"url": url, "fallback": "og:description"},
+        )
         description = _og(soup, "description") or ""
+        total_ms = int((time.monotonic() - t0) * 1000)
+        log.info(
+            "extraction complete",
+            extra={"url": url, "status": "partial", "content_chars": len(description),
+                   "duration_ms": total_ms},
+        )
         return ExtractionResult(
             url=url, url_type="web", title=title, author=author,
             raw_content=description or None,
@@ -72,6 +115,16 @@ def extract(url: str) -> ExtractionResult:
             error_msg="Main content could not be extracted (possible paywall or JS page)",
         )
 
+    total_ms = int((time.monotonic() - t0) * 1000)
+    log.info(
+        "extraction complete",
+        extra={
+            "url": url, "status": "done",
+            "content_chars": len(content),
+            "discovered_count": len(discovered),
+            "duration_ms": total_ms,
+        },
+    )
     return ExtractionResult(
         url=url,
         url_type="web",
