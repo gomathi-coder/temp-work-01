@@ -19,6 +19,14 @@ def _short_id() -> str:
 # ── Schema ─────────────────────────────────────────────────────────────────
 
 _SCHEMA = """
+CREATE TABLE IF NOT EXISTS users (
+    id            TEXT PRIMARY KEY,
+    username      TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    created_at    TEXT NOT NULL,
+    last_login    TEXT
+);
+
 CREATE TABLE IF NOT EXISTS entries (
     id               TEXT PRIMARY KEY,
     url              TEXT UNIQUE NOT NULL,
@@ -89,6 +97,20 @@ def init_db() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     with _conn() as conn:
         conn.executescript(_SCHEMA)
+    _migrate_db()
+
+
+def _migrate_db() -> None:
+    """Idempotent ALTER TABLE migrations for columns added after initial release."""
+    with _conn() as conn:
+        for table, col, definition in [
+            ("entries",     "user_id", "TEXT REFERENCES users(id)"),
+            ("groups",      "user_id", "TEXT REFERENCES users(id)"),
+            ("input_files", "user_id", "TEXT REFERENCES users(id)"),
+        ]:
+            existing = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+            if col not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {definition}")
 
 
 def _conn() -> sqlite3.Connection:
@@ -161,6 +183,7 @@ def list_entries(
     url_type: str | None = None,
     source_type: str | None = None,
     status: str | None = None,
+    user_id: str | None = None,
     limit: int = 20,
     offset: int = 0,
 ) -> list[dict]:
@@ -186,6 +209,9 @@ def list_entries(
             "EXISTS (SELECT 1 FROM json_each(e.tags) WHERE value = ?)"
         )
         params.append(tag)
+    if user_id:
+        conditions.append("e.user_id = ?")
+        params.append(user_id)
 
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
@@ -195,6 +221,23 @@ def list_entries(
     with _conn() as conn:
         rows = conn.execute(query, params).fetchall()
     return [_deserialise(r) for r in rows]
+
+
+def count_entries(
+    tag: str | None = None,
+    user_id: str | None = None,
+) -> int:
+    conditions: list[str] = []
+    params: list = []
+    if tag:
+        conditions.append("EXISTS (SELECT 1 FROM json_each(tags) WHERE value = ?)")
+        params.append(tag)
+    if user_id:
+        conditions.append("user_id = ?")
+        params.append(user_id)
+    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    with _conn() as conn:
+        return conn.execute(f"SELECT COUNT(*) FROM entries {where}", params).fetchone()[0]
 
 
 def get_all_entries_for_linking() -> list[dict]:
@@ -262,15 +305,21 @@ def delete_links_for(entry_id: str, link_type: str | None = None) -> None:
         )
 
 
-def search_entries(query_text: str, limit: int = 10) -> list[dict]:
+def search_entries(query_text: str, user_id: str | None = None, limit: int = 20) -> list[dict]:
     """Simple keyword search over title, summary, and tags (Phase 1)."""
     like = f"%{query_text}%"
+    user_clause = "AND user_id = ?" if user_id else ""
+    params = [like, like, like]
+    if user_id:
+        params.append(user_id)
+    params.append(limit)
     with _conn() as conn:
         rows = conn.execute(
-            """SELECT * FROM entries
-               WHERE title LIKE ? OR summary LIKE ? OR tags LIKE ?
+            f"""SELECT * FROM entries
+               WHERE (title LIKE ? OR summary LIKE ? OR tags LIKE ?)
+               {user_clause}
                ORDER BY created_at DESC LIMIT ?""",
-            (like, like, like, limit),
+            params,
         ).fetchall()
     return [_deserialise(r) for r in rows]
 
@@ -284,43 +333,65 @@ def delete_entry(id_or_url: str) -> bool:
     return cur.rowcount > 0
 
 
-def get_stats() -> dict:
+def get_stats(user_id: str | None = None) -> dict:
+    where = "WHERE user_id = ?" if user_id else ""
+    p = (user_id,) if user_id else ()
     with _conn() as conn:
-        total = conn.execute("SELECT COUNT(*) FROM entries").fetchone()[0]
+        total = conn.execute(f"SELECT COUNT(*) FROM entries {where}", p).fetchone()[0]
         by_type = conn.execute(
-            "SELECT url_type, COUNT(*) FROM entries GROUP BY url_type"
+            f"SELECT url_type, COUNT(*) FROM entries {where} GROUP BY url_type", p
         ).fetchall()
         by_status = conn.execute(
-            "SELECT status, COUNT(*) FROM entries GROUP BY status"
-        ).fetchall()
-        by_source = conn.execute(
-            "SELECT source_type, COUNT(*) FROM entries GROUP BY source_type"
+            f"SELECT status, COUNT(*) FROM entries {where} GROUP BY status", p
         ).fetchall()
         unique_tags = conn.execute(
-            "SELECT COUNT(DISTINCT value) FROM entries, json_each(entries.tags)"
+            f"SELECT COUNT(DISTINCT value) FROM entries {where.replace('WHERE','AND') if where else ''} "
+            f", json_each(entries.tags)",
+            p,
         ).fetchone()[0]
         unique_entities = conn.execute(
-            "SELECT COUNT(DISTINCT json_extract(value, '$.name')) "
-            "FROM entries, json_each(entries.entities)"
+            f"SELECT COUNT(DISTINCT json_extract(value, '$.name')) "
+            f"FROM entries {where.replace('WHERE','AND') if where else ''} "
+            f", json_each(entries.entities)",
+            p,
         ).fetchone()[0]
-        total_groups = conn.execute("SELECT COUNT(*) FROM groups").fetchone()[0]
-        total_links = conn.execute("SELECT COUNT(*) FROM links").fetchone()[0]
-        discovered_pending = conn.execute(
-            "SELECT SUM(json_array_length(discovered_links)) FROM entries"
-        ).fetchone()[0] or 0
+        # Groups and links are global (not per-user) but scoped by user-owned entries
+        if user_id:
+            total_groups = conn.execute(
+                """SELECT COUNT(DISTINCT g.id) FROM groups g
+                   JOIN entry_groups eg ON g.id = eg.group_id
+                   JOIN entries e ON eg.entry_id = e.id
+                   WHERE e.user_id = ?""",
+                (user_id,),
+            ).fetchone()[0]
+            total_links = conn.execute(
+                """SELECT COUNT(DISTINCT l.id) FROM links l
+                   JOIN entries e ON (l.from_id = e.id OR l.to_id = e.id)
+                   WHERE e.user_id = ?""",
+                (user_id,),
+            ).fetchone()[0]
+        else:
+            total_groups = conn.execute("SELECT COUNT(*) FROM groups").fetchone()[0]
+            total_links = conn.execute("SELECT COUNT(*) FROM links").fetchone()[0]
+
+        # Top tags for this user
+        top_tags = conn.execute(
+            f"""SELECT value AS tag, COUNT(*) AS cnt
+                FROM entries {where}, json_each(entries.tags)
+                GROUP BY value ORDER BY cnt DESC LIMIT 10""",
+            p,
+        ).fetchall()
 
     return {
         "entries": {
             "total": total,
             "by_type": dict(by_type),
             "by_status": dict(by_status),
-            "by_source": dict(by_source),
         },
-        "tags": {"unique": unique_tags},
+        "tags": {"unique": unique_tags, "top": [dict(r) for r in top_tags]},
         "entities": {"unique": unique_entities},
         "groups": {"total": total_groups},
         "links": {"total": total_links},
-        "discovered_pending": discovered_pending,
     }
 
 
@@ -357,14 +428,27 @@ def remove_from_group(entry_id: str, group_id: str) -> None:
         )
 
 
-def list_groups() -> list[dict]:
-    with _conn() as conn:
-        rows = conn.execute(
-            """SELECT g.*, COUNT(eg.entry_id) AS entry_count
-               FROM groups g
-               LEFT JOIN entry_groups eg ON g.id = eg.group_id
-               GROUP BY g.id ORDER BY g.name""",
-        ).fetchall()
+def list_groups(user_id: str | None = None) -> list[dict]:
+    if user_id:
+        # Only groups that contain at least one entry owned by this user
+        with _conn() as conn:
+            rows = conn.execute(
+                """SELECT g.*, COUNT(eg.entry_id) AS entry_count
+                   FROM groups g
+                   JOIN entry_groups eg ON g.id = eg.group_id
+                   JOIN entries e ON eg.entry_id = e.id
+                   WHERE e.user_id = ?
+                   GROUP BY g.id ORDER BY g.name""",
+                (user_id,),
+            ).fetchall()
+    else:
+        with _conn() as conn:
+            rows = conn.execute(
+                """SELECT g.*, COUNT(eg.entry_id) AS entry_count
+                   FROM groups g
+                   LEFT JOIN entry_groups eg ON g.id = eg.group_id
+                   GROUP BY g.id ORDER BY g.name""",
+            ).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -430,3 +514,45 @@ def list_input_files() -> list[dict]:
             "SELECT * FROM input_files ORDER BY last_read_at DESC"
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ── User CRUD ──────────────────────────────────────────────────────────────
+
+def create_user(username: str, password_hash: str) -> str:
+    user_id = _short_id()
+    with _conn() as conn:
+        conn.execute(
+            "INSERT INTO users (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)",
+            (user_id, username, password_hash, _now()),
+        )
+    return user_id
+
+
+def get_user_by_username(username: str) -> dict | None:
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM users WHERE username = ?", (username,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_user_by_id(user_id: str) -> dict | None:
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def update_user_last_login(user_id: str) -> None:
+    with _conn() as conn:
+        conn.execute(
+            "UPDATE users SET last_login = ? WHERE id = ?", (_now(), user_id)
+        )
+
+
+def update_user_password(user_id: str, password_hash: str) -> None:
+    with _conn() as conn:
+        conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id)
+        )

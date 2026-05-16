@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}LinkWiki{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
+  <link rel="stylesheet" href="/static/style.css" />
+  {% block head %}{% endblock %}
+</head>
+<body>
+
+<nav class="navbar">
+  <a href="/entries" class="navbar-brand">Link<span>Wiki</span></a>
+
+  <ul class="navbar-nav">
+    <li><a href="/entries" {% if request.url.path.startswith('/entries') %}class="active"{% endif %}>Entries</a></li>
+    <li><a href="/groups"  {% if request.url.path.startswith('/groups')  %}class="active"{% endif %}>Groups</a></li>
+    <li><a href="/stats"   {% if request.url.path.startswith('/stats')   %}class="active"{% endif %}>Stats</a></li>
+  </ul>
+
+  <div class="navbar-user">
+    {% if user is defined and user %}
+      <a href="/entries/new" class="btn btn-primary btn-sm">+ Add</a>
+      <span>{{ user.username }}</span>
+      <a href="/profile" class="btn btn-ghost btn-sm">Profile</a>
+      <form class="logout-form" method="post" action="/logout">
+        <button class="logout-btn" type="submit">Sign out</button>
+      </form>
+    {% endif %}
+  </div>
+</nav>
+
+{% block body %}{% endblock %}
+
+{% block scripts %}{% endblock %}
+</body>
+</html>

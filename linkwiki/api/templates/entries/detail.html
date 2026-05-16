@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% block title %}{{ entry.title or entry.url }} — LinkWiki{% endblock %}
+
+{% block body %}
+<div class="container" style="max-width:780px;">
+
+  <!-- Back -->
+  <div style="margin-bottom:1.25rem;">
+    <a href="/entries" style="font-size:0.85rem; color:var(--muted);">← Back to entries</a>
+  </div>
+
+  <!-- Header -->
+  <div style="margin-bottom:1.5rem;">
+    <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.6rem; flex-wrap:wrap;">
+      <span style="font-size:0.7rem; font-weight:600; text-transform:uppercase;
+                   letter-spacing:0.06em; padding:0.2rem 0.5rem; border-radius:3px;
+                   background:var(--border); color:var(--muted);">{{ entry.url_type }}</span>
+      <span style="font-size:0.7rem; padding:0.2rem 0.5rem; border-radius:3px;
+                   background:{% if entry.status == 'done' %}rgba(76,175,136,0.15)
+                     {% elif entry.status == 'error' %}rgba(224,92,106,0.15)
+                     {% elif entry.status == 'partial' %}rgba(255,183,77,0.15)
+                     {% else %}rgba(139,143,168,0.15){% endif %};
+                   color:{% if entry.status == 'done' %}var(--success)
+                     {% elif entry.status == 'error' %}var(--danger)
+                     {% elif entry.status == 'partial' %}#ffb74d
+                     {% else %}var(--muted){% endif %};">{{ entry.status }}</span>
+      {% for g in groups %}
+      <span style="font-size:0.7rem; padding:0.2rem 0.5rem; border-radius:3px;
+                   background:rgba(108,142,247,0.1); color:var(--primary);">{{ g }}</span>
+      {% endfor %}
+    </div>
+
+    <h1 style="font-size:1.5rem; font-weight:700; line-height:1.3; margin-bottom:0.4rem;">
+      {{ entry.title or entry.url }}
+    </h1>
+
+    <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
+      {% if entry.author %}
+      <span style="font-size:0.85rem; color:var(--muted);">{{ entry.author }}</span>
+      {% endif %}
+      <a href="{{ entry.url }}" target="_blank" rel="noopener"
+         style="font-size:0.8rem; color:var(--muted); word-break:break-all;">
+        {{ entry.url }}
+      </a>
+    </div>
+
+    <p style="font-size:0.8rem; color:var(--muted); margin-top:0.4rem;">
+      Added {{ entry.created_at[:10] }}
+      {% if entry.processed_at %} · processed {{ entry.processed_at[:10] }}{% endif %}
+    </p>
+  </div>
+
+  <div style="display:grid; grid-template-columns:1fr 260px; gap:2rem; align-items:start;">
+
+    <!-- Left col -->
+    <div>
+
+      <!-- Summary -->
+      {% if entry.summary %}
+      <div style="background:var(--surface); border:1px solid var(--border);
+                  border-radius:var(--radius); padding:1.25rem; margin-bottom:1.5rem;">
+        <p class="section-title">Summary</p>
+        <p style="font-size:0.925rem; line-height:1.7; white-space:pre-wrap;">{{ entry.summary }}</p>
+      </div>
+      {% endif %}
+
+      {% if entry.status == 'error' and entry.error_msg %}
+      <div class="alert alert-error" style="margin-bottom:1.5rem;">
+        <strong>Processing error:</strong> {{ entry.error_msg }}
+      </div>
+      {% endif %}
+
+      <!-- Tags -->
+      {% if entry.tags %}
+      <div style="margin-bottom:1.5rem;">
+        <p class="section-title">Tags</p>
+        <div style="display:flex; flex-wrap:wrap; gap:0.4rem;">
+          {% for t in entry.tags %}
+          <a href="/entries?tag={{ t | urlencode }}"
+             style="font-size:0.82rem; padding:0.25rem 0.65rem; border-radius:4px;
+                    background:rgba(108,142,247,0.12); color:var(--primary); text-decoration:none;">
+            {{ t }}
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Entities -->
+      {% if entities_by_type %}
+      <div style="margin-bottom:1.5rem;">
+        <p class="section-title">Entities</p>
+        <div style="display:flex; flex-direction:column; gap:0.75rem;">
+          {% for kind, items in entities_by_type.items() %}
+          <div>
+            <p style="font-size:0.72rem; text-transform:uppercase; letter-spacing:0.06em;
+                      color:var(--muted); margin-bottom:0.35rem;">{{ kind }}</p>
+            <div style="display:flex; flex-wrap:wrap; gap:0.3rem;">
+              {% for ent in items %}
+              <span style="font-size:0.8rem; padding:0.2rem 0.55rem; border-radius:4px;
+                           background:rgba(196,181,253,0.1); color:#c4b5fd; border:1px solid rgba(196,181,253,0.2);">
+                {{ ent.name }}
+              </span>
+              {% endfor %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Discovered links -->
+      {% if entry.discovered_links %}
+      <div style="margin-bottom:1.5rem;">
+        <p class="section-title">Links found in this page</p>
+        <div style="display:flex; flex-direction:column; gap:0.4rem;">
+          {% for lnk in entry.discovered_links[:15] %}
+          <div style="display:flex; align-items:center; gap:0.6rem;">
+            <a href="{{ lnk.url if lnk is mapping else lnk }}" target="_blank" rel="noopener"
+               style="font-size:0.82rem; color:var(--muted); word-break:break-all;
+                      overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;">
+              {{ lnk.title if (lnk is mapping and lnk.title) else (lnk.url if lnk is mapping else lnk) }}
+            </a>
+          </div>
+          {% endfor %}
+          {% if entry.discovered_links | length > 15 %}
+          <p style="font-size:0.78rem; color:var(--muted);">
+            + {{ entry.discovered_links | length - 15 }} more
+          </p>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+
+    </div>
+
+    <!-- Right col -->
+    <div>
+
+      <!-- Related entries -->
+      {% if related %}
+      <div style="background:var(--surface); border:1px solid var(--border);
+                  border-radius:var(--radius); padding:1rem; margin-bottom:1.25rem;">
+        <p class="section-title">Related</p>
+        <div style="display:flex; flex-direction:column; gap:0.6rem;">
+          {% for r in related %}
+          <div>
+            <a href="/entries/{{ r.id }}"
+               style="font-size:0.85rem; color:var(--text); font-weight:500; line-height:1.3;">
+              {{ r.title or r.url }}
+            </a>
+            <p style="font-size:0.75rem; color:var(--muted); margin-top:0.1rem;">
+              {{ r.link_type }} · {{ "%.0f%%" | format(r.strength * 100) }}
+            </p>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Actions -->
+      <div style="background:var(--surface); border:1px solid var(--border);
+                  border-radius:var(--radius); padding:1rem;">
+        <p class="section-title">Actions</p>
+        <div style="display:flex; flex-direction:column; gap:0.5rem;">
+          <a href="{{ entry.url }}" target="_blank" rel="noopener"
+             class="btn btn-ghost btn-sm" style="justify-content:flex-start;">
+            Open original ↗
+          </a>
+          <form method="post" action="/entries/{{ entry.id }}/delete"
+                onsubmit="return confirm('Delete this entry?')">
+            <button class="btn btn-danger btn-sm btn-full" type="submit">Delete entry</button>
+          </form>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endblock %}

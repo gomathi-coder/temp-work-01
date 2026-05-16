@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}Profile — LinkWiki{% endblock %}
+
+{% block body %}
+<div class="container container-sm">
+  <div class="page-header">
+    <h1>Profile</h1>
+  </div>
+
+  <div class="card" style="margin-bottom: 1.5rem;">
+    <p class="section-title">Account</p>
+    <p style="font-size: 1.05rem; font-weight: 600;">{{ user.username }}</p>
+    <p style="color: var(--muted); font-size: 0.85rem; margin-top: 0.3rem;">
+      Member since {{ user.created_at[:10] }}
+      {% if user.last_login %}
+        &nbsp;·&nbsp; Last sign in {{ user.last_login[:10] }}
+      {% endif %}
+    </p>
+  </div>
+
+  <div class="card">
+    <p class="section-title">Change password</p>
+
+    {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+
+    {% if success %}
+    <div class="alert alert-success">{{ success }}</div>
+    {% endif %}
+
+    <form method="post" action="/profile/password">
+      <div class="form-group">
+        <label for="current_password">Current password</label>
+        <input
+          class="form-control"
+          type="password"
+          id="current_password"
+          name="current_password"
+          autocomplete="current-password"
+          required
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="new_password">New password</label>
+        <input
+          class="form-control"
+          type="password"
+          id="new_password"
+          name="new_password"
+          autocomplete="new-password"
+          required
+          minlength="8"
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="confirm_password">Confirm new password</label>
+        <input
+          class="form-control"
+          type="password"
+          id="confirm_password"
+          name="confirm_password"
+          autocomplete="new-password"
+          required
+          minlength="8"
+        />
+      </div>
+
+      <button class="btn btn-primary" type="submit">Update password</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -23,3 +23,8 @@ CLUSTER_MIN_SAMPLES = 3     # minimum entries to form a cluster
 
 CLAUDE_MODEL = "claude-sonnet-4-6"
 MAX_CONTENT_CHARS = 80_000
+
+# Web / Auth
+JWT_SECRET: str = os.getenv("LINKWIKI_JWT_SECRET", "change-me-in-production-please")
+JWT_ALGORITHM: str = "HS256"
+JWT_EXPIRE_MINUTES: int = int(os.getenv("LINKWIKI_JWT_EXPIRE_MINUTES", "10080"))  # 7 days
