@@ -4,8 +4,9 @@ from __future__ import annotations
 import json
 import logging
 import time
+from datetime import datetime, timezone
 import anthropic
-from linkwiki.core.config import ANTHROPIC_API_KEY, CLAUDE_MODEL, MAX_CONTENT_CHARS
+from linkwiki.core.config import ANTHROPIC_API_KEY, CLAUDE_MODEL, LLM_LOG_DIR, MAX_CONTENT_CHARS
 
 log = logging.getLogger(__name__)
 
@@ -33,6 +34,17 @@ def _client_instance() -> anthropic.Anthropic:
     if _client is None:
         _client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     return _client
+
+
+def _save_llm_log(url_type: str, attempt: int, user_text: str, raw_response: str) -> str:
+    LLM_LOG_DIR.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
+    path = LLM_LOG_DIR / f"{ts}_{url_type}_attempt{attempt}.txt"
+    path.write_text(
+        f"=== REQUEST ===\n{user_text}\n\n=== RESPONSE ===\n{raw_response}\n",
+        encoding="utf-8",
+    )
+    return str(path)
 
 
 def _truncate(text: str) -> str:
@@ -69,6 +81,7 @@ def summarise_and_tag(
 
     client = _client_instance()
     last_err: Exception | None = None
+    log_path: str | None = None
     t0 = time.monotonic()
 
     for attempt in range(3):
@@ -92,6 +105,7 @@ def summarise_and_tag(
             )
             duration_ms = int((time.monotonic() - t0) * 1000)
             raw = response.content[0].text.strip()
+            log_path = _save_llm_log(url_type, attempt_num, user_text, raw)
             # Strip accidental markdown fences
             if raw.startswith("```"):
                 raw = raw.split("```")[1]
@@ -108,6 +122,7 @@ def summarise_and_tag(
                     "output_tokens": response.usage.output_tokens,
                     "tags_returned": len(result.get("tags", [])),
                     "entities_returned": len(result.get("entities", [])),
+                    "llm_log": log_path,
                 },
             )
             return result
@@ -116,7 +131,8 @@ def summarise_and_tag(
             last_err = e
             log.warning(
                 "JSON decode error, retrying with reminder",
-                extra={"url_type": url_type, "attempt": attempt_num, "error": str(e)},
+                extra={"url_type": url_type, "attempt": attempt_num, "error": str(e),
+                       "llm_log": log_path},
             )
             user_text += "\n\nIMPORTANT: Return only raw JSON, no markdown."
 
@@ -144,7 +160,8 @@ def summarise_and_tag(
     log.error(
         "Claude API failed after all attempts",
         extra={"url_type": url_type, "title": title,
-               "duration_ms": duration_ms, "last_error": str(last_err)},
+               "duration_ms": duration_ms, "last_error": str(last_err),
+               "llm_log": log_path},
     )
     raise RuntimeError(f"Claude API failed after 3 attempts: {last_err}")
 
@@ -170,6 +187,7 @@ def name_cluster(entries: list[dict]) -> dict:
         'Return JSON only: {"name": "...", "description": "..."}'
     )
     client = _client_instance()
+    log_path: str | None = None
     for attempt in range(3):
         attempt_num = attempt + 1
         try:
@@ -180,19 +198,22 @@ def name_cluster(entries: list[dict]) -> dict:
                           "cache_control": {"type": "ephemeral"}}],
                 messages=[{"role": "user", "content": prompt}],
             )
-            raw = response.content[0].text.strip().lstrip("```json").rstrip("```").strip()
+            raw = response.content[0].text.strip()
+            log_path = _save_llm_log("cluster", attempt_num, prompt, raw)
+            raw = raw.lstrip("```json").rstrip("```").strip()
             result = json.loads(raw)
             duration_ms = int((time.monotonic() - t0) * 1000)
             log.info(
                 "cluster naming complete",
                 extra={"entry_count": entry_count, "cluster_name": result.get("name"),
-                       "attempt": attempt_num, "duration_ms": duration_ms},
+                       "attempt": attempt_num, "duration_ms": duration_ms,
+                       "llm_log": log_path},
             )
             return result
         except (json.JSONDecodeError, Exception) as e:
             log.warning(
                 "cluster naming attempt failed",
-                extra={"attempt": attempt_num, "error": str(e)},
+                extra={"attempt": attempt_num, "error": str(e), "llm_log": log_path},
             )
             time.sleep(2 ** attempt)
 

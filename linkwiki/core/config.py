@@ -13,6 +13,7 @@ CHROMA_DIR = DATA_DIR / "vectors"
 
 # Logging — LOG_DIR defaults to logs/ relative to the working directory
 LOG_DIR = Path(os.getenv("LINKWIKI_LOG_DIR", "") or "logs")
+LLM_LOG_DIR: Path = LOG_DIR / "llm_calls"
 LOG_LEVEL: str = os.getenv("LINKWIKI_LOG_LEVEL", "INFO").upper()
 
 EMBED_MODEL = "all-MiniLM-L6-v2"
