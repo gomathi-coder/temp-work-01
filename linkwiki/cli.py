@@ -1,7 +1,9 @@
 """LinkWiki CLI — all commands."""
 
 from __future__ import annotations
+import shutil
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import click
@@ -624,3 +626,27 @@ def export(fmt: str, output: str | None, group: str | None) -> None:
             f"   [dim]{len(entries)} entry pages · groups · index.html[/]\n"
             f"   Open [bold]{path}/index.html[/] in any browser"
         )
+
+
+# ── archive ────────────────────────────────────────────────────────────────
+
+@cli.command()
+@click.option("--source", default="linkwiki-html",
+              help="Folder to archive (default: linkwiki-html).")
+@click.option("--dest", default="archive",
+              help="Destination archive directory (default: archive).")
+def archive(source: str, dest: str) -> None:
+    """Move the linkwiki-html export folder into archive/ with a timestamp suffix."""
+    source_path = Path(source)
+    if not source_path.exists() or not source_path.is_dir():
+        console.print(f"[red]✖[/] Source folder not found: [bold]{source}[/]")
+        raise SystemExit(1)
+
+    dest_path = Path(dest)
+    dest_path.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime("archive-%d-%m-%Y-%H-%M-%S")
+    target = dest_path / timestamp
+
+    shutil.move(str(source_path), str(target))
+    console.print(f"[green]✔[/] Archived → [bold]{target}/[/]")

@@ -257,6 +257,8 @@ def export_html(entries: list[dict], output_dir: str) -> int:
     _write_index(enriched, groups, out)
     for e in enriched:
         _write_entry_page(e, out)
+        if e.get("raw_content"):
+            _write_content_page(e, out)
     for g in groups:
         g_entries = [e for e in enriched if g["name"] in e["groups"]]
         _write_group_page(g, g_entries, out)
@@ -381,6 +383,13 @@ def _write_entry_page(e: dict, out: Path) -> None:
     if created:
         meta_badges += f' <span style="color:var(--text-muted);font-size:13px">{created}</span>'
 
+    content_link = ""
+    if e.get("raw_content"):
+        content_link = (
+            f'<a class="back-link" style="margin-bottom:12px" '
+            f'href="{e["id"]}_content.html">&#128196; View full content</a>'
+        )
+
     summary_section = ""
     if e.get("summary"):
         summary_section = f"""<div class="section">
@@ -481,6 +490,7 @@ def _write_entry_page(e: dict, out: Path) -> None:
   <div class="entry-url">
     <a href="{_esc(e['url'])}" target="_blank" rel="noopener">{_esc(e['url'])}</a>
   </div>
+  {content_link}
   {summary_section}
   {tags_section}
   {entities_section}
@@ -492,6 +502,60 @@ def _write_entry_page(e: dict, out: Path) -> None:
 </html>"""
 
     (out / "entries" / f"{e['id']}.html").write_text(html, encoding="utf-8")
+
+
+# ── Content page ───────────────────────────────────────────────────────────
+
+def _write_content_page(e: dict, out: Path) -> None:
+    title = _esc(e.get("title") or e["url"])
+    content_lines = (e.get("raw_content") or "").splitlines()
+    content_html = "\n".join(
+        f'<p class="content-line">{_esc(line) if line.strip() else "&nbsp;"}</p>'
+        for line in content_lines
+    )
+    word_count = len((e.get("raw_content") or "").split())
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title} — Content — LinkWiki</title>
+<style>{_CSS}
+.content-body {{
+  max-width: 800px; margin: 32px auto; padding: 0 20px 60px;
+}}
+.content-line {{
+  color: var(--text); font-size: 14px; line-height: 1.8;
+  margin-bottom: 2px; word-break: break-word; white-space: pre-wrap;
+}}
+.content-meta {{
+  color: var(--text-muted); font-size: 13px; margin-bottom: 20px;
+}}
+</style>
+</head>
+<body>
+<header>
+  <div class="container">
+    <div class="header-inner">
+      <a class="site-title" href="../index.html">Link<span>Wiki</span></a>
+    </div>
+  </div>
+</header>
+<div class="content-body">
+  <a class="back-link" href="{e['id']}.html">← Back to entry</a>
+  <h1 style="color:var(--heading);font-size:1.3rem;margin-bottom:10px">{title}</h1>
+  <div class="entry-url">
+    <a href="{_esc(e['url'])}" target="_blank" rel="noopener">{_esc(e['url'])}</a>
+  </div>
+  <div class="content-meta">{word_count:,} words</div>
+  <div class="section-title">Full Content</div>
+  <div style="margin-top:12px">{content_html}</div>
+</div>
+</body>
+</html>"""
+
+    (out / "entries" / f"{e['id']}_content.html").write_text(html, encoding="utf-8")
 
 
 # ── Group page ─────────────────────────────────────────────────────────────
