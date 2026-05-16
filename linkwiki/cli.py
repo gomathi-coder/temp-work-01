@@ -6,6 +6,11 @@ from pathlib import Path
 
 import click
 from rich.console import Console
+
+# Force UTF-8 output on Windows to support Unicode characters
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 from rich.table import Table
 from rich import box
 from rich.panel import Panel

@@ -1,4 +1,4 @@
-"""YouTube extractor — transcript via youtube-transcript-api, metadata via oEmbed + pytube."""
+"""YouTube extractor — transcript via youtube-transcript-api, metadata via oEmbed + pytubefix."""
 
 from __future__ import annotations
 import re
@@ -32,9 +32,9 @@ def _oembed_meta(url: str) -> tuple[str | None, str | None]:
 
 
 def _pytube_description(url: str) -> str:
-    """Try to get description from pytube; returns empty string on any failure."""
+    """Try to get description from pytubefix; returns empty string on any failure."""
     try:
-        from pytube import YouTube  # type: ignore
+        from pytubefix import YouTube  # type: ignore
         return YouTube(url).description or ""
     except Exception:
         return ""
@@ -43,8 +43,9 @@ def _pytube_description(url: str) -> str:
 def _transcript(video_id: str) -> str:
     try:
         from youtube_transcript_api import YouTubeTranscriptApi  # type: ignore
-        entries = YouTubeTranscriptApi.get_transcript(video_id)
-        return " ".join(e["text"] for e in entries)
+        ytt_api = YouTubeTranscriptApi()
+        fetched = ytt_api.fetch(video_id)
+        return " ".join([snippet.text for snippet in fetched.snippets])
     except Exception:
         return ""
 
