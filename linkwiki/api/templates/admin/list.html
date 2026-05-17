@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block title %}Admin — LinkWiki{% endblock %}
+
+{% block head %}
+<style>
+  .admin-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: 1fr;
+  }
+  @media (min-width: 600px) {
+    .admin-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (min-width: 1100px) {
+    .admin-grid { grid-template-columns: repeat(4, 1fr); }
+  }
+
+  .admin-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.9rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    text-decoration: none;
+    color: inherit;
+    transition: border-color 0.15s;
+  }
+  .admin-card:hover { border-color: var(--primary); }
+
+  .admin-card-badges {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .badge-type {
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 0.12rem 0.4rem;
+    border-radius: 3px;
+    background: var(--border);
+    color: var(--muted);
+  }
+  .badge-status {
+    font-size: 0.68rem;
+    padding: 0.12rem 0.4rem;
+    border-radius: 3px;
+  }
+  .badge-done    { background: rgba(76,175,136,0.15); color: var(--success); }
+  .badge-error   { background: rgba(224,92,106,0.15); color: var(--danger); }
+  .badge-partial { background: rgba(255,183,77,0.15);  color: #ffb74d; }
+  .badge-pending { background: rgba(139,143,168,0.15); color: var(--muted); }
+
+  .admin-card-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .admin-card-url {
+    font-size: 0.75rem;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .admin-card-date {
+    font-size: 0.72rem;
+    color: var(--muted);
+    margin-top: auto;
+  }
+
+  .add-form-panel {
+    background: var(--surface);
+    border: 1px solid var(--primary);
+    border-radius: var(--radius);
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .flash-banner {
+    padding: 0.6rem 1rem;
+    border-radius: var(--radius);
+    font-size: 0.875rem;
+    margin-bottom: 1rem;
+  }
+  .flash-added     { background: rgba(76,175,136,0.12); color: var(--success); border: 1px solid rgba(76,175,136,0.3); }
+  .flash-duplicate { background: rgba(255,183,77,0.12); color: #ffb74d;        border: 1px solid rgba(255,183,77,0.3); }
+</style>
+{% endblock %}
+
+{% block body %}
+<main style="padding: 1.5rem 2rem; max-width: 1400px; margin: 0 auto;">
+
+  <!-- Header row -->
+  <div class="page-header" style="margin-bottom: 1.25rem;">
+    <h1>
+      Admin
+      <span style="font-size:0.9rem; font-weight:400; color:var(--muted);">{{ total }}</span>
+    </h1>
+    <a href="/admin?adding=1{% if q %}&q={{ q | urlencode }}{% endif %}"
+       class="btn btn-primary btn-sm">+ Add Link</a>
+  </div>
+
+  <!-- Flash message -->
+  {% if msg == "added" %}
+  <div class="flash-banner flash-added">Link added — processing in background. Refresh to see status updates.</div>
+  {% elif msg == "duplicate" %}
+  <div class="flash-banner flash-duplicate">This URL already exists in your library.</div>
+  {% endif %}
+
+  <!-- Inline add form -->
+  {% if adding %}
+  <div class="add-form-panel">
+    <p style="font-size:0.85rem; font-weight:600; margin-bottom:0.75rem;">Add a link</p>
+    <form method="post" action="/admin/entries"
+          style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
+      <input class="form-control" type="url" name="url" placeholder="https://…"
+             required autofocus style="flex:1; min-width:0;" />
+      <button class="btn btn-primary" type="submit">Add</button>
+      <a href="/admin{% if q %}?q={{ q | urlencode }}{% endif %}" class="btn btn-ghost">Cancel</a>
+    </form>
+    <p style="font-size:0.78rem; color:var(--muted); margin-top:0.5rem;">
+      Supports YouTube, GitHub, arXiv, and general web pages.
+    </p>
+  </div>
+  {% endif %}
+
+  <!-- Filter + search -->
+  <form method="get" action="/admin"
+        style="display:flex; gap:0.5rem; align-items:center; margin-bottom:1.25rem; flex-wrap:wrap;">
+    <input class="form-control" type="search" name="q" value="{{ q }}"
+           placeholder="Filter by title or URL…" style="width:280px; max-width:100%;" />
+    <button class="btn btn-ghost" type="submit">Filter</button>
+    {% if q %}
+    <a href="/admin" class="btn btn-ghost">Clear</a>
+    {% endif %}
+  </form>
+
+  <!-- Grid -->
+  {% if entries %}
+  <div class="admin-grid">
+    {% for e in entries %}
+    <a href="/entries/{{ e.id }}" class="admin-card">
+      <div class="admin-card-badges">
+        <span class="badge-type">{{ e.url_type }}</span>
+        <span class="badge-status badge-{{ e.status }}">{{ e.status }}</span>
+      </div>
+      <div class="admin-card-title">{{ e.title or e.url }}</div>
+      <div class="admin-card-url" title="{{ e.url }}">{{ e.url }}</div>
+      <div class="admin-card-date">{{ e.created_at[:10] }}</div>
+    </a>
+    {% endfor %}
+  </div>
+
+  <!-- Pagination -->
+  {% if total_pages > 1 %}
+  <div style="display:flex; align-items:center; justify-content:center; gap:0.5rem; margin-top:2rem;">
+    {% if page > 1 %}
+    <a href="/admin?page={{ page - 1 }}{% if q %}&q={{ q | urlencode }}{% endif %}"
+       class="btn btn-ghost btn-sm">← Prev</a>
+    {% else %}
+    <span class="btn btn-ghost btn-sm" style="opacity:0.35; pointer-events:none;">← Prev</span>
+    {% endif %}
+
+    <span style="font-size:0.85rem; color:var(--muted);">Page {{ page }} of {{ total_pages }}</span>
+
+    {% if page < total_pages %}
+    <a href="/admin?page={{ page + 1 }}{% if q %}&q={{ q | urlencode }}{% endif %}"
+       class="btn btn-ghost btn-sm">Next →</a>
+    {% else %}
+    <span class="btn btn-ghost btn-sm" style="opacity:0.35; pointer-events:none;">Next →</span>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% else %}
+  <div style="text-align:center; padding:4rem 0; color:var(--muted);">
+    {% if q %}
+    <p>No entries matching "{{ q }}".</p>
+    <a href="/admin" class="btn btn-ghost" style="margin-top:0.75rem;">Clear filter</a>
+    {% else %}
+    <p style="margin-bottom:1rem;">No links yet.</p>
+    <a href="/admin?adding=1" class="btn btn-primary">Add your first link</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</main>
+{% endblock %}

@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Stats — LinkWiki{% endblock %}
+
+{% block body %}
+<div class="container" style="max-width:700px;">
+  <div class="page-header">
+    <h1>Stats</h1>
+  </div>
+
+  <!-- Summary cards -->
+  <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(140px,1fr)); gap:1rem; margin-bottom:2rem;">
+    {% for label, value in [
+        ("Links", stats.entries.total),
+        ("Groups", stats.groups.total),
+        ("Connections", stats.links.total),
+        ("Unique tags", stats.tags.unique),
+        ("Entities", stats.entities.unique),
+    ] %}
+    <div style="background:var(--surface); border:1px solid var(--border);
+                border-radius:var(--radius); padding:1.1rem 1.25rem; text-align:center;">
+      <p style="font-size:1.75rem; font-weight:700; color:var(--text);">{{ value }}</p>
+      <p style="font-size:0.78rem; color:var(--muted); margin-top:0.2rem;">{{ label }}</p>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="stats-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem;">
+
+    <!-- By type -->
+    <div style="background:var(--surface); border:1px solid var(--border);
+                border-radius:var(--radius); padding:1.25rem;">
+      <p class="section-title">By source type</p>
+      {% if stats.entries.by_type %}
+        {% set total = stats.entries.total or 1 %}
+        <div style="display:flex; flex-direction:column; gap:0.6rem; margin-top:0.5rem;">
+          {% for type, count in stats.entries.by_type.items() %}
+          <div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:0.25rem;">
+              <span style="font-size:0.82rem; color:var(--text);">{{ type }}</span>
+              <span style="font-size:0.82rem; color:var(--muted);">{{ count }}</span>
+            </div>
+            <div style="height:4px; background:var(--border); border-radius:2px;">
+              <div style="height:4px; background:var(--primary); border-radius:2px;
+                          width:{{ ((count / total) * 100) | round | int }}%;"></div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p style="font-size:0.85rem; color:var(--muted); margin-top:0.5rem;">No data yet.</p>
+      {% endif %}
+    </div>
+
+    <!-- By status -->
+    <div style="background:var(--surface); border:1px solid var(--border);
+                border-radius:var(--radius); padding:1.25rem;">
+      <p class="section-title">By status</p>
+      {% if stats.entries.by_status %}
+        {% set total = stats.entries.total or 1 %}
+        <div style="display:flex; flex-direction:column; gap:0.6rem; margin-top:0.5rem;">
+          {% for status, count in stats.entries.by_status.items() %}
+          <div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:0.25rem;">
+              <span style="font-size:0.82rem;
+                           color:{% if status == 'done' %}var(--success)
+                             {% elif status == 'error' %}var(--danger)
+                             {% elif status == 'partial' %}#ffb74d
+                             {% else %}var(--muted){% endif %};">{{ status }}</span>
+              <span style="font-size:0.82rem; color:var(--muted);">{{ count }}</span>
+            </div>
+            <div style="height:4px; background:var(--border); border-radius:2px;">
+              <div style="height:4px; border-radius:2px;
+                          background:{% if status == 'done' %}var(--success)
+                            {% elif status == 'error' %}var(--danger)
+                            {% elif status == 'partial' %}#ffb74d
+                            {% else %}var(--muted){% endif %};
+                          width:{{ ((count / total) * 100) | round | int }}%;"></div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p style="font-size:0.85rem; color:var(--muted); margin-top:0.5rem;">No data yet.</p>
+      {% endif %}
+    </div>
+
+    <!-- Top tags -->
+    <div style="background:var(--surface); border:1px solid var(--border);
+                border-radius:var(--radius); padding:1.25rem; grid-column:1/-1;">
+      <p class="section-title">Top tags</p>
+      {% if stats.tags.top %}
+        {% set max_count = stats.tags.top[0].cnt %}
+        <div style="display:flex; flex-direction:column; gap:0.5rem; margin-top:0.5rem;">
+          {% for row in stats.tags.top %}
+          <div style="display:flex; align-items:center; gap:0.75rem;">
+            <a href="/entries?tag={{ row.tag | urlencode }}"
+               style="font-size:0.82rem; color:var(--primary); min-width:120px;
+                      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+              {{ row.tag }}
+            </a>
+            <div style="flex:1; height:4px; background:var(--border); border-radius:2px;">
+              <div style="height:4px; background:var(--primary); border-radius:2px;
+                          width:{{ ((row.cnt / max_count) * 100) | round | int }}%;
+                          opacity:0.7;"></div>
+            </div>
+            <span style="font-size:0.78rem; color:var(--muted); min-width:24px; text-align:right;">
+              {{ row.cnt }}
+            </span>
+          </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p style="font-size:0.85rem; color:var(--muted); margin-top:0.5rem;">No tags yet.</p>
+      {% endif %}
+    </div>
+
+  </div>
+</div>
+{% endblock %}

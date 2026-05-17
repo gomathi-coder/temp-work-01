@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Add link — LinkWiki{% endblock %}
+
+{% block body %}
+<div class="container container-sm" style="padding-top:3rem;">
+  <div class="page-header">
+    <h1>Add a link</h1>
+  </div>
+
+  {% if error %}
+  <div class="alert alert-error">{{ error }}</div>
+  {% endif %}
+
+  <div class="card">
+    <form method="post" action="/entries">
+      <div class="form-group">
+        <label for="url">URL</label>
+        <input
+          class="form-control"
+          type="url"
+          id="url"
+          name="url"
+          value="{{ url or '' }}"
+          placeholder="https://…"
+          autofocus
+          required
+        />
+      </div>
+      <p style="font-size:0.8rem; color:var(--muted); margin-bottom:1.25rem;">
+        Supports YouTube, GitHub, arXiv, and regular web pages.
+        Processing takes a few seconds while the AI summarises the content.
+      </p>
+      <div style="display:flex; gap:0.75rem; align-items:center;">
+        <button class="btn btn-primary" type="submit">Add link</button>
+        <a href="/entries" class="btn btn-ghost">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

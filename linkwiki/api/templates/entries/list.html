@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}Entries — LinkWiki{% endblock %}
+
+{% block body %}
+<div class="entries-layout" style="display:flex; gap:0; min-height:calc(100vh - 56px);">
+
+  <!-- Sidebar -->
+  <aside class="entries-sidebar" style="width:220px; flex-shrink:0; border-right:1px solid var(--border); padding:1.5rem 1rem;">
+    <p class="section-title">Filter by tag</p>
+    {% if all_tags %}
+      <div style="display:flex; flex-direction:column; gap:0.2rem;">
+        <a href="/entries"
+           style="font-size:0.82rem; padding:0.25rem 0.5rem; border-radius:4px;
+                  color:{% if not tag %}var(--primary){% else %}var(--muted){% endif %};
+                  background:{% if not tag %}rgba(108,142,247,0.1){% else %}transparent{% endif %};">
+          All entries <span style="color:var(--muted);">({{ total if not tag else "" }})</span>
+        </a>
+        {% for t in all_tags %}
+        <a href="/entries?tag={{ t | urlencode }}"
+           style="font-size:0.82rem; padding:0.25rem 0.5rem; border-radius:4px;
+                  color:{% if tag == t %}var(--primary){% else %}var(--muted){% endif %};
+                  background:{% if tag == t %}rgba(108,142,247,0.1){% else %}transparent{% endif %};
+                  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"
+           title="{{ t }}">
+          {{ t }}
+        </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p style="font-size:0.82rem; color:var(--muted);">No tags yet.</p>
+    {% endif %}
+  </aside>
+
+  <!-- Main -->
+  <main class="entries-main" style="flex:1; padding:1.5rem 2rem; min-width:0;">
+
+    <!-- Search + heading -->
+    <div class="page-header">
+      <h1>
+        {% if q %}Results for "{{ q }}"
+        {% elif tag %}Tagged "{{ tag }}"
+        {% else %}All entries{% endif %}
+        <span style="font-size:0.9rem; font-weight:400; color:var(--muted);">{{ total }}</span>
+      </h1>
+      <form method="get" action="/entries" style="display:flex; gap:0.5rem;">
+        {% if tag %}<input type="hidden" name="tag" value="{{ tag }}" />{% endif %}
+        <input class="form-control" type="search" name="q" value="{{ q }}"
+               placeholder="Search…" style="width:220px;" />
+        <button class="btn btn-ghost" type="submit">Search</button>
+        {% if q %}<a href="/entries{% if tag %}?tag={{ tag | urlencode }}{% endif %}" class="btn btn-ghost">Clear</a>{% endif %}
+      </form>
+    </div>
+
+    <!-- Entry cards -->
+    {% if entries %}
+      <div style="display:flex; flex-direction:column; gap:0.75rem;">
+        {% for e in entries %}
+        <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:1rem 1.25rem;">
+          <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:1rem;">
+            <div style="min-width:0; flex:1;">
+
+              <!-- Title + type badge -->
+              <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.3rem; flex-wrap:wrap;">
+                <span style="font-size:0.7rem; font-weight:600; text-transform:uppercase;
+                             letter-spacing:0.06em; padding:0.15rem 0.45rem; border-radius:3px;
+                             background:var(--border); color:var(--muted);">{{ e.url_type }}</span>
+                <span style="font-size:0.7rem; padding:0.15rem 0.45rem; border-radius:3px;
+                             background:{% if e.status == 'done' %}rgba(76,175,136,0.15)
+                               {% elif e.status == 'error' %}rgba(224,92,106,0.15)
+                               {% elif e.status == 'partial' %}rgba(255,183,77,0.15)
+                               {% else %}rgba(139,143,168,0.15){% endif %};
+                             color:{% if e.status == 'done' %}var(--success)
+                               {% elif e.status == 'error' %}var(--danger)
+                               {% elif e.status == 'partial' %}#ffb74d
+                               {% else %}var(--muted){% endif %};">{{ e.status }}</span>
+              </div>
+
+              <a href="/entries/{{ e.id }}"
+                 style="font-size:0.975rem; font-weight:600; color:var(--text); line-height:1.3;">
+                {{ e.title or e.url }}
+              </a>
+
+              {% if e.author %}
+              <p style="font-size:0.8rem; color:var(--muted); margin-top:0.2rem;">{{ e.author }}</p>
+              {% endif %}
+
+              {% if e.summary %}
+              <p style="font-size:0.85rem; color:var(--muted); margin-top:0.4rem;
+                         display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+                         overflow:hidden;">{{ e.summary }}</p>
+              {% endif %}
+
+              <!-- Tags -->
+              {% if e.tags %}
+              <div style="display:flex; flex-wrap:wrap; gap:0.3rem; margin-top:0.6rem;">
+                {% for t in e.tags[:8] %}
+                <a href="/entries?tag={{ t | urlencode }}"
+                   style="font-size:0.75rem; padding:0.15rem 0.5rem; border-radius:3px;
+                          background:rgba(108,142,247,0.12); color:var(--primary);
+                          text-decoration:none;">{{ t }}</a>
+                {% endfor %}
+                {% if e.tags | length > 8 %}
+                <span style="font-size:0.75rem; color:var(--muted);">+{{ e.tags | length - 8 }}</span>
+                {% endif %}
+              </div>
+              {% endif %}
+            </div>
+
+            <!-- Date -->
+            <div style="flex-shrink:0; text-align:right;">
+              <span style="font-size:0.75rem; color:var(--muted);">{{ e.created_at[:10] }}</span>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <!-- Pagination -->
+      {% if total_pages > 1 and not q %}
+      <div style="display:flex; align-items:center; justify-content:center; gap:0.5rem; margin-top:2rem;">
+        {% if page > 1 %}
+        <a href="/entries?page={{ page - 1 }}{% if tag %}&tag={{ tag | urlencode }}{% endif %}"
+           class="btn btn-ghost btn-sm">← Prev</a>
+        {% endif %}
+        <span style="font-size:0.85rem; color:var(--muted);">{{ page }} / {{ total_pages }}</span>
+        {% if page < total_pages %}
+        <a href="/entries?page={{ page + 1 }}{% if tag %}&tag={{ tag | urlencode }}{% endif %}"
+           class="btn btn-ghost btn-sm">Next →</a>
+        {% endif %}
+      </div>
+      {% endif %}
+
+    {% else %}
+      <div style="text-align:center; padding:4rem 0; color:var(--muted);">
+        {% if q %}
+          <p>No results for "{{ q }}".</p>
+        {% elif tag %}
+          <p>No entries tagged "{{ tag }}".</p>
+        {% else %}
+          <p style="margin-bottom:1rem;">No links yet.</p>
+          <a href="/entries/new" class="btn btn-primary">Add your first link</a>
+        {% endif %}
+      </div>
+    {% endif %}
+
+  </main>
+</div>
+{% endblock %}
