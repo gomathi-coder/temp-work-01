@@ -50,7 +50,7 @@
     </p>
   </div>
 
-  <div style="display:grid; grid-template-columns:1fr 260px; gap:2rem; align-items:start;">
+  <div class="entry-detail-grid" style="display:grid; grid-template-columns:1fr 260px; gap:2rem; align-items:start;">
 
     <!-- Left col -->
     <div>
@@ -106,6 +106,26 @@
           </div>
           {% endfor %}
         </div>
+      </div>
+      {% endif %}
+
+      <!-- Raw content -->
+      {% if entry.raw_content %}
+      <div style="margin-bottom:1.5rem;">
+        <details>
+          <summary style="font-size:0.78rem; font-weight:600; text-transform:uppercase;
+                          letter-spacing:0.06em; color:var(--muted); cursor:pointer;
+                          user-select:none; list-style:none; display:flex; align-items:center; gap:0.4rem;">
+            <span>&#9656;</span> Original extracted content
+            <span style="font-weight:400; text-transform:none; letter-spacing:0;">
+              ({{ entry.raw_content | length | int }} chars)
+            </span>
+          </summary>
+          <pre style="margin-top:0.75rem; background:var(--surface); border:1px solid var(--border);
+                      border-radius:var(--radius); padding:1rem; font-size:0.78rem; line-height:1.6;
+                      white-space:pre-wrap; word-break:break-word; max-height:400px; overflow-y:auto;
+                      color:var(--muted);">{{ entry.raw_content }}</pre>
+        </details>
       </div>
       {% endif %}
 

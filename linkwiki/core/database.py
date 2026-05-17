@@ -305,6 +305,73 @@ def delete_links_for(entry_id: str, link_type: str | None = None) -> None:
         )
 
 
+def create_pending_entry(url: str, url_type: str, source_type: str, user_id: str) -> str:
+    """Insert a new entry with status='pending' and return entry_id."""
+    entry_id = _short_id()
+    with _conn() as conn:
+        conn.execute(
+            """INSERT INTO entries (id, url, url_type, source_type, status, user_id, created_at)
+               VALUES (?, ?, ?, ?, 'pending', ?, ?)""",
+            (entry_id, url, url_type, source_type, user_id, _now()),
+        )
+    return entry_id
+
+
+def set_entry_status(entry_id: str, status: str, error_msg: str | None = None) -> None:
+    """Update status (and optionally error_msg) on an existing entry."""
+    with _conn() as conn:
+        if error_msg is not None:
+            conn.execute(
+                "UPDATE entries SET status = ?, error_msg = ?, processed_at = ? WHERE id = ?",
+                (status, error_msg, _now(), entry_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE entries SET status = ?, processed_at = ? WHERE id = ?",
+                (status, _now(), entry_id),
+            )
+
+
+def list_all_tags(user_id: str) -> list[str]:
+    """Return all distinct tag values across a user's entries, sorted alphabetically."""
+    with _conn() as conn:
+        rows = conn.execute(
+            """SELECT DISTINCT value FROM entries, json_each(entries.tags)
+               WHERE user_id = ? ORDER BY value""",
+            (user_id,),
+        ).fetchall()
+    return [r[0] for r in rows]
+
+
+def list_entries_for_admin(
+    user_id: str,
+    q: str | None = None,
+    limit: int = 24,
+    offset: int = 0,
+) -> tuple[list[dict], int]:
+    """Return (entries, total_count) for the admin grid with optional title/url text filter."""
+    conditions = ["e.user_id = ?"]
+    params: list = [user_id]
+
+    if q:
+        conditions.append("(e.title LIKE ? OR e.url LIKE ?)")
+        like = f"%{q}%"
+        params.extend([like, like])
+
+    where = "WHERE " + " AND ".join(conditions)
+
+    with _conn() as conn:
+        total = conn.execute(
+            f"SELECT COUNT(*) FROM entries e {where}", params
+        ).fetchone()[0]
+        rows = conn.execute(
+            f"SELECT * FROM entries e {where} ORDER BY e.created_at DESC LIMIT ? OFFSET ?",
+            params + [limit, offset],
+        ).fetchall()
+
+    return [_deserialise(r) for r in rows], total
+
+
 def search_entries(query_text: str, user_id: str | None = None, limit: int = 20) -> list[dict]:
     """Simple keyword search over title, summary, and tags (Phase 1)."""
     like = f"%{query_text}%"

@@ -2,10 +2,10 @@
 {% block title %}Entries — LinkWiki{% endblock %}
 
 {% block body %}
-<div style="display:flex; gap:0; min-height:calc(100vh - 56px);">
+<div class="entries-layout" style="display:flex; gap:0; min-height:calc(100vh - 56px);">
 
   <!-- Sidebar -->
-  <aside style="width:220px; flex-shrink:0; border-right:1px solid var(--border); padding:1.5rem 1rem;">
+  <aside class="entries-sidebar" style="width:220px; flex-shrink:0; border-right:1px solid var(--border); padding:1.5rem 1rem;">
     <p class="section-title">Filter by tag</p>
     {% if all_tags %}
       <div style="display:flex; flex-direction:column; gap:0.2rem;">
@@ -32,7 +32,7 @@
   </aside>
 
   <!-- Main -->
-  <main style="flex:1; padding:1.5rem 2rem; min-width:0;">
+  <main class="entries-main" style="flex:1; padding:1.5rem 2rem; min-width:0;">
 
     <!-- Search + heading -->
     <div class="page-header">

@@ -18,11 +18,12 @@
     <li><a href="/entries" {% if request.url.path.startswith('/entries') %}class="active"{% endif %}>Entries</a></li>
     <li><a href="/groups"  {% if request.url.path.startswith('/groups')  %}class="active"{% endif %}>Groups</a></li>
     <li><a href="/stats"   {% if request.url.path.startswith('/stats')   %}class="active"{% endif %}>Stats</a></li>
+    <li><a href="/admin"   {% if request.url.path.startswith('/admin')   %}class="active"{% endif %}>Admin</a></li>
   </ul>
 
   <div class="navbar-user">
     {% if user is defined and user %}
-      <a href="/entries/new" class="btn btn-primary btn-sm">+ Add</a>
+      <a href="/admin?adding=1" class="btn btn-primary btn-sm">+ Add</a>
       <span>{{ user.username }}</span>
       <a href="/profile" class="btn btn-ghost btn-sm">Profile</a>
       <form class="logout-form" method="post" action="/logout">

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import logging
+import traceback
 import time
 from datetime import datetime, timezone
 from linkwiki.core import database as db
@@ -193,3 +194,77 @@ def ingest(
         "id": entry_id,
         "entry": db.get_entry(entry_id),
     }
+
+
+def process_entry(entry_id: str, url: str) -> None:
+    """
+    Run extraction, AI, embedding, and linking for an already-created pending entry.
+    Designed to be called from a background thread — updates DB status when done.
+    """
+    t0 = time.monotonic()
+    log.info("background process started", extra={"entry_id": entry_id, "url": url})
+
+    try:
+        result = extractors.extract(url)
+        log.info(
+            "background extraction finished",
+            extra={"entry_id": entry_id, "url_type": result.url_type,
+                   "content_chars": len(result.raw_content or "")},
+        )
+
+        ai_result: dict = {"summary": None, "tags": [], "entities": [], "suggested_groups": []}
+        if result.raw_content:
+            try:
+                ai_result = ai.summarise_and_tag(
+                    result.url_type, result.title, result.author, result.raw_content
+                )
+            except Exception as exc:
+                log.error("AI failed in background", extra={"entry_id": entry_id, "error": str(exc)})
+                db.update_entry(
+                    entry_id,
+                    url_type=result.url_type,
+                    title=result.title,
+                    author=result.author,
+                    status="error",
+                    error_msg=str(exc),
+                    processed_at=_now(),
+                )
+                return
+
+        all_tags = list(dict.fromkeys(ai_result.get("tags", [])))
+
+        db.update_entry(
+            entry_id,
+            url_type=result.url_type,
+            title=result.title,
+            author=result.author,
+            raw_content=result.raw_content,
+            summary=ai_result.get("summary"),
+            tags=all_tags,
+            entities=ai_result.get("entities", []),
+            discovered_links=result.discovered_links,
+            status=result.status,
+            processed_at=_now(),
+        )
+
+        try:
+            vectors.embed_entry(entry_id, result.title, ai_result.get("summary"),
+                                result.url_type, all_tags)
+            linker.link_entry(entry_id)
+        except Exception as exc:
+            log.warning("embedding/linking failed (non-blocking)",
+                        extra={"entry_id": entry_id, "error": str(exc)})
+
+        for suggested in ai_result.get("suggested_groups", []):
+            existing_group = db.get_group_by_name(suggested)
+            if existing_group:
+                db.assign_to_group(entry_id, existing_group["id"], "auto")
+
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        log.info("background process complete",
+                 extra={"entry_id": entry_id, "status": result.status, "duration_ms": duration_ms})
+
+    except Exception as exc:
+        log.error("background process failed",
+                  extra={"entry_id": entry_id, "error": str(exc), "tb": traceback.format_exc()})
+        db.update_entry(entry_id, status="error", error_msg=str(exc), processed_at=_now())

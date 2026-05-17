@@ -43,16 +43,7 @@ async def entry_list(request: Request, q: str = "", tag: str = "", page: int = 1
         )
         total = db.count_entries(tag=tag.strip() or None, user_id=user["id"])
 
-    # Collect all unique tags across current user's entries for the filter sidebar
-    all_entries_sample = db.list_entries(user_id=user["id"], limit=500)
-    all_tags: list[str] = []
-    seen: set[str] = set()
-    for e in all_entries_sample:
-        for t in e.get("tags") or []:
-            if t not in seen:
-                seen.add(t)
-                all_tags.append(t)
-    all_tags.sort()
+    all_tags = db.list_all_tags(user["id"])
 
     total_pages = max(1, math.ceil(total / _PAGE_SIZE))
 

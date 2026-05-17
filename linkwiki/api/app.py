@@ -8,6 +8,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from linkwiki.api.routers import admin as admin_router
 from linkwiki.api.routers import auth as auth_router
 from linkwiki.api.routers import entries as entries_router
 from linkwiki.api.routers import groups as groups_router
@@ -28,6 +29,7 @@ app = FastAPI(title="LinkWiki", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=_HERE / "static"), name="static")
 
 app.include_router(auth_router.router, tags=["auth"])
+app.include_router(admin_router.router, tags=["admin"])
 app.include_router(entries_router.router, tags=["entries"])
 app.include_router(groups_router.router, tags=["groups"])
 app.include_router(stats_router.router, tags=["stats"])
